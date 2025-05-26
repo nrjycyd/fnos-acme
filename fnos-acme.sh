@@ -78,7 +78,7 @@ esac
 # 检查证书是否成功申请
 if [ $? -eq 0 ]; then
     # 运行续签后的脚本
-    "$SCRIPT_DIR/qnap-ser.sh" "$DOMAIN"
+    "$SCRIPT_DIR/fnos-ser.sh" "$DOMAIN"
 else
     echo "证书申请失败"
 fi
