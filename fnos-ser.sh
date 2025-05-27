@@ -24,7 +24,7 @@ if [ ! -x "$0" ]; then
 fi
 
 # 检查必要命令
-REQUIRED_CMDS=("systemctl" "journalctl" "openssl" "readlink" "mkdir" "cat" "chmod")
+REQUIRED_CMDS=("systemctl" "journalctl" "openssl" "readlink" "mkdir" "cat" "chmod" "find")
 for cmd in "${REQUIRED_CMDS[@]}"; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
         echo "错误: 缺少必要命令 $cmd"
@@ -92,27 +92,44 @@ check_cert_file "$KEY_PATH" "私钥"
 check_cert_file "$CER_PATH" "证书"
 check_cert_file "$CA_PATH" "CA证书"
 
-# 定义fnOS目录路径
-FNOS_DIR="/usr/trim/var/trim_connect/ssls/fnOS"
+# 证书安装目标路径
+TARGET_PARENT_DIR="/usr/trim/var/trim_connect/ssls/$DOMAIN"
 
-# 获取fnOS目录下唯一的子目录名
-echo "正在获取fnOS子目录..."
-FNOS_SUBDIR=$(ls -1 "$FNOS_DIR" 2>/dev/null | head -n 1)
-
-if [ -z "$FNOS_SUBDIR" ]; then
-    echo "错误: 无法获取fnOS目录下的子目录名"
-    echo "调试信息: ls输出: $(ls -la "$FNOS_DIR" 2>/dev/null || true)"
+# 检查是否是初次安装（检查目标目录下是否有子文件夹）
+echo "正在检查证书目录..."
+if [ ! -d "$TARGET_PARENT_DIR" ] || [ -z "$(find "$TARGET_PARENT_DIR" -mindepth 1 -maxdepth 1 -type d)" ]; then
+    echo "错误: 初次安装证书，请手动导入"
+    echo "提示: 请先在设备管理界面手动导入证书一次"
     exit 1
 fi
 
-# 定义目标目录路径
-TARGET_DIR="/usr/trim/var/trim_connect/ssls/$DOMAIN/$FNOS_SUBDIR"
+# 获取第一个子目录名（通常只有一个）
+TARGET_SUBDIR=$(find "$TARGET_PARENT_DIR" -mindepth 1 -maxdepth 1 -type d | head -n 1)
+TARGET_DIR="$TARGET_SUBDIR"
 
-# 创建目标目录
-echo "正在创建目标目录: $TARGET_DIR"
-if ! mkdir -p "$TARGET_DIR"; then
-    echo "错误: 目录创建失败"
-    echo "调试信息: 父目录权限: $(ls -ld "$(dirname "$TARGET_DIR")" 2>/dev/null || true)"
+if [ -z "$TARGET_DIR" ]; then
+    echo "错误: 无法获取证书子目录名"
+    echo "调试信息: 目录内容: $(ls -la "$TARGET_PARENT_DIR" 2>/dev/null || true)"
+    exit 1
+fi
+
+echo "检测到证书目录: $TARGET_DIR"
+
+# 创建备份目录
+BACKUP_DIR="$SCRIPT_DIR/backup"
+if [ ! -d "$BACKUP_DIR" ]; then
+    mkdir -p "$BACKUP_DIR" || {
+        echo "错误: 无法创建备份目录 $BACKUP_DIR"
+        exit 1
+    }
+fi
+
+# 备份现有证书
+TIMESTAMP=$(date +"%Y%m%d%H%M%S")
+BACKUP_NAME="${DOMAIN}_${TIMESTAMP}"
+echo "正在备份现有证书到: $BACKUP_DIR/$BACKUP_NAME"
+if ! cp -r "$TARGET_PARENT_DIR" "$BACKUP_DIR/$BACKUP_NAME"; then
+    echo "错误: 证书备份失败"
     exit 1
 fi
 
@@ -193,5 +210,6 @@ if [ ${#FAILED_SERVICES[@]} -gt 0 ]; then
 fi
 
 echo -e "\n所有操作完成! 详细日志已记录到: $LOG_FILE"
+echo "备份目录: $BACKUP_DIR/$BACKUP_NAME"
 echo "如需查看日志，请执行: cat $LOG_FILE"
 exit ${#FAILED_SERVICES[@]}
